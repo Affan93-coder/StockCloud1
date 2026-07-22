@@ -167,3 +167,8 @@ def api_recommend():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=81, debug=False)
+from twilio.rest import Client 
+twilio_client = Client(os.environ['TWILIO_SID'], os.environ['TWILIO_TOKEN'])
+
+def send_alert(to_number, message):  
+    twilio_client.messages.create(body=message, from_='YOUR_TWILIO_NUMBER', to=to_number)
