@@ -9,5 +9,6 @@ dependencies = [
     "pydantic>=2.13.4",
     "python-dotenv>=1.2.2",
     "requests>=2.34.2",
+    "twilio>=9.10.9",
     "uvicorn[standard]>=0.51.0",
 ]
