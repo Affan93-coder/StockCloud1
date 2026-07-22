@@ -1,31 +1,139 @@
 <!DOCTYPE html>
-<!--
-  This file is the entry for ALL routes, including /preview/* canvas iframes.
-  Fonts are loaded here as non-blocking <link> tags (not CSS @import, which is render-blocking).
--->
-<html lang="en" style="height: 100%">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StockCast</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 500px;
+      margin: 40px auto;
+      padding: 0 16px;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: bold;
+    }
+    input, select, button {
+      width: 100%;
+      padding: 10px;
+      font-size: 16px;
+      box-sizing: border-box;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    button {
+      background-color: #007bff;
+      color: white;
+      border: none;
+      cursor: pointer;
+      margin-top: 10px;
+      font-weight: 600;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    button:disabled {
+      background-color: #a0c4ff;
+      cursor: not-allowed;
+    }
+    #result {
+      font-size: 18px;
+      margin-top: 24px;
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
 
-    <meta property="og:title" content="Mockup Canvas" />
-    <meta property="og:description" content="UI prototyping sandbox with infinite canvas" />
-    <meta property="og:type" content="website" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Mockup Canvas" />
-    <meta name="twitter:description" content="UI prototyping sandbox with infinite canvas" />
+  <h2>StockCast — Today's Order</h2>
 
-    <title>Mockup Canvas</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎨</text></svg>">
-    <!-- Non-blocking font bundle: renders with fallback fonts immediately, swaps in when loaded -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" media="print" onload="this.media='all'"
-          href="https://fonts.googleapis.com/css2?family=Architects+Daughter&family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Fira+Code:wght@300..700&family=Geist+Mono:wght@100..900&family=Geist:wght@100..900&family=IBM+Plex+Mono:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;1,100;1,200;1,300;1,400;1,500;1,600;1,700&family=IBM+Plex+Sans:ital,wght@0,100..700;1,100..700&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Lora:ital,wght@0,400..700;1,400..700&family=Merriweather:ital,opsz,wght@0,18..144,300..900;1,18..144,300..900&family=Montserrat:ital,wght@0,100..900;1,100..900&family=Open+Sans:ital,wght@0,300..800;1,300..800&family=Outfit:wght@100..900&family=Oxanium:wght@200..800&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Roboto+Mono:ital,wght@0,100..700;1,100..700&family=Roboto:ital,wght@0,100..900;1,100..900&family=Source+Code+Pro:ital,wght@0,200..900;1,200..900&family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&family=Space+Grotesk:wght@300..700&family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap">
-    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Architects+Daughter&family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Fira+Code:wght@300..700&family=Geist+Mono:wght@100..900&family=Geist:wght@100..900&family=IBM+Plex+Mono:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;1,100;1,200;1,300;1,400;1,500;1,600;1,700&family=IBM+Plex+Sans:ital,wght@0,100..700;1,100..700&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Lora:ital,wght@0,400..700;1,400..700&family=Merriweather:ital,opsz,wght@0,18..144,300..900;1,18..144,300..900&family=Montserrat:ital,wght@0,100..900;1,100..900&family=Open+Sans:ital,wght@0,300..800;1,300..800&family=Outfit:wght@100..900&family=Oxanium:wght@200..800&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Roboto+Mono:ital,wght@0,100..700;1,100..700&family=Roboto:ital,wght@0,100..900;1,100..900&family=Source+Code+Pro:ital,wght@0,200..900;1,200..900&family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&family=Space+Grotesk:wght@300..700&family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap"></noscript>
-  </head>
-  <body style="height: 100%; margin: 0">
-    <div id="root" style="height: 100%"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+  <form id="recommendForm">
+    <div class="form-group">
+      <label for="city">City:</label>
+      <input id="city" type="text" value="Ahmedabad" required>
+    </div>
+
+    <div class="form-group">
+      <label for="category">Category:</label>
+      <select id="category">
+        <option value="cold_beverages">Cold Beverages</option>
+        <option value="dairy_chaas_lassi">Dairy (Chaas / Lassi)</option>
+        <option value="hot_snacks">Hot Snacks</option>
+        <option value="general_staples">General Staples</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="baseline">Your usual daily units:</label>
+      <input id="baseline" type="number" value="50" min="1" required>
+    </div>
+
+    <button type="submit" id="submitBtn">Get Suggestion</button>
+  </form>
+
+  <p id="result"></p>
+
+  <script>
+    const form = document.getElementById('recommendForm');
+    const resultEl = document.getElementById('result');
+    const submitBtn = document.getElementById('submitBtn');
+
+    form.addEventListener('submit', async function(e) {
+      e.preventDefault(); // Prevents page reload
+
+      const cityVal = document.getElementById('city').value.trim();
+      const categoryVal = document.getElementById('category').value;
+      const baselineVal = document.getElementById('baseline').value.trim();
+
+      if (!cityVal || !baselineVal || Number(baselineVal) <= 0) {
+        resultEl.innerText = "Please enter a valid city and baseline quantity.";
+        return;
+      }
+
+      const city = encodeURIComponent(cityVal);
+      const category = encodeURIComponent(categoryVal);
+      const baseline = encodeURIComponent(baselineVal);
+
+      // Loading state
+      submitBtn.disabled = true;
+      resultEl.innerText = "Fetching weather recommendation...";
+
+      try {
+        // Change '/api/recommend' to 'http://localhost:5000/api/recommend' if running backend on local server
+        const res = await fetch(`/api/recommend?city=${city}&category=${category}&baseline=${baseline}`);
+
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
+
+        const data = await res.json();
+
+        const range = data.suggested_range;
+        if (!Array.isArray(range) || range.length < 2) {
+          throw new Error("Invalid response format from backend.");
+        }
+
+        const temp = data.temp ?? 'N/A';
+        const rainProb = data.rain_prob ?? 'N/A';
+
+        resultEl.innerText =
+          `Stock ${range[0]}–${range[1]} units today ` +
+          `(forecast ${temp}°C, ${rainProb}% rain chance)`;
+
+      } catch (err) {
+        console.error("Fetch Error:", err);
+        resultEl.innerText = "Error fetching recommendation. Please check your network or server.";
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+
+</body>
 </html>
