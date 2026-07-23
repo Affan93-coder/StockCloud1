@@ -1,12 +1,48 @@
+import logging
 import os
+from flask import Flask, jsonify, render_template_string, request
 import requests
-from flask import Flask, jsonify, request, render_template_string
+from twilio.base.exceptions import TwilioRestException
+from twilio.rest import Client
 
+# -----------------------------------
+# Logging Configuration
+# -----------------------------------
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
+logger = logging.getLogger(__name__)
+
+# -----------------------------------
+# App Setup & Environment Variables
+# -----------------------------------
 app = Flask(__name__)
 
-# OWM_API_KEY loaded from environment variables
-API_KEY = os.environ.get("OWM_API_KEY")
+OWM_API_KEY = os.getenv("OWM_API_KEY")
+TWILIO_SID = os.getenv("TWILIO_SID")
+TWILIO_TOKEN = os.getenv("TWILIO_TOKEN")
+TWILIO_FROM_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
 
+# -----------------------------------
+# Safe Twilio Initialization
+# -----------------------------------
+twilio_client = None
+
+if TWILIO_SID and TWILIO_TOKEN:
+  try:
+    twilio_client = Client(TWILIO_SID, TWILIO_TOKEN)
+    logger.info("Twilio client initialized successfully.")
+  except Exception as e:
+    logger.error("Failed to initialize Twilio client: %s", e)
+else:
+  logger.warning(
+      "Twilio credentials not fully provided. SMS functionality will be"
+      " disabled."
+  )
+
+# -----------------------------------
+# Business Rules Configuration
+# -----------------------------------
 CATEGORY_RULES = {
     "cold_beverages": {
         "temp_threshold": 38,
@@ -39,136 +75,290 @@ ENTERPRISE_CONFIGS = {
 }
 
 
-def get_forecast(city):
-    """Fetches weather forecast with error handling for API failures."""
-    if not API_KEY:
-        raise RuntimeError("OWM_API_KEY environment variable is not set.")
+# -----------------------------------
+# Helper Services
+# -----------------------------------
+def send_alert(to_number: str, message: str):
+  """Sends an SMS using Twilio safely.
 
-    url = "https://api.openweathermap.org/data/2.5/forecast"
-    params = {"q": city, "appid": API_KEY, "units": "metric"}
+  Parameters
+  ----------
+  to_number : str
+      Recipient phone number in E.164 format (e.g., +919876543210).
+  message : str
+      SMS message body.
 
-    try:
-        response = requests.get(url, params=params, timeout=10)
+  Returns
+  -------
+  MessageInstance | None
+  """
+  if twilio_client is None:
+    logger.error("SMS trigger failed: Twilio client is not initialized.")
+    return None
 
-        # Explicit handling for 404 City Not Found
-        if response.status_code == 404:
-            raise ValueError(f"City '{city}' was not found.")
+  if not TWILIO_FROM_NUMBER:
+    logger.error(
+        "SMS trigger failed: TWILIO_PHONE_NUMBER environment variable is"
+        " missing."
+    )
+    return None
 
-        response.raise_for_status()
-        data = response.json()
+  if not to_number or not isinstance(to_number, str):
+    logger.error(
+        "SMS trigger failed: Recipient phone number must be a valid string."
+    )
+    return None
 
-        if "list" not in data or not data["list"]:
-            raise ValueError(f"Could not retrieve forecast list for city: '{city}'.")
+  if not message or not isinstance(message, str):
+    logger.error("SMS trigger failed: Message body cannot be empty.")
+    return None
 
-        first = data["list"][0]
-        temp = float(first["main"]["temp"])
+  try:
+    sms = twilio_client.messages.create(
+        body=message.strip(),
+        from_=TWILIO_FROM_NUMBER,
+        to=to_number.strip(),
+    )
+    logger.info("SMS sent successfully to %s. SID: %s", to_number, sms.sid)
+    return sms
 
-        # Safe extraction of probability of precipitation ('pop')
-        raw_pop = first.get("pop")
-        rain_prob = float(raw_pop) * 100 if raw_pop is not None else 0.0
-
-        return temp, rain_prob
-
-    except requests.exceptions.RequestException as e:
-        raise ConnectionError(f"Failed to connect to OpenWeatherMap API: {e}")
-
-
-def recommend(category, baseline_units, temp, rain_prob, tier="standard_vendor"):
-    """Calculates the adjusted inventory recommendation range."""
-    rule = CATEGORY_RULES.get(category, CATEGORY_RULES["general_staples"])
-    config = ENTERPRISE_CONFIGS.get(tier, ENTERPRISE_CONFIGS["standard_vendor"])
-
-    adj = 0
-    if rule["temp_threshold"] and temp > rule["temp_threshold"]:
-        adj += (temp - rule["temp_threshold"]) * rule["per_degree_pct"]
-    if rain_prob > 50:
-        adj += rule["rain_penalty_pct"]  # ty:ignore[unsupported-operator]
-
-    # Apply safety buffer for enterprise orders
-    adjusted_baseline = baseline_units * (1 + (config["buffer_pct"] / 100))
-
-    spread = config["range_spread"]
-    low_calc = max(0, round(adjusted_baseline * (1 + (adj - spread) / 100)))
-    high_calc = max(0, round(adjusted_baseline * (1 + (adj + spread) / 100)))
-
-    return min(low_calc, high_calc), max(low_calc, high_calc)
+  except TwilioRestException as e:
+    logger.error("Twilio API Error while sending to %s: %s", to_number, e)
+    return None
+  except Exception as e:
+    logger.exception("Unexpected error while sending SMS: %s", e)
+    return None
 
 
+def get_forecast(city: str):
+  """Fetches weather forecast with complete error handling for OWM API."""
+  if not OWM_API_KEY:
+    raise RuntimeError("OWM_API_KEY environment variable is not set.")
+
+  url = "https://api.openweathermap.org/data/2.5/forecast"
+  params = {"q": city, "appid": OWM_API_KEY, "units": "metric"}
+
+  try:
+    response = requests.get(url, params=params, timeout=10)
+
+    if response.status_code == 404:
+      raise ValueError(f"City '{city}' was not found.")
+
+    response.raise_for_status()
+    data = response.json()
+
+    if "list" not in data or not data["list"]:
+      raise ValueError(f"Could not retrieve forecast list for city: '{city}'.")
+
+    first = data["list"][0]
+    temp = float(first["main"]["temp"])
+
+    # Safe extraction of probability of precipitation ('pop')
+    raw_pop = first.get("pop")
+    rain_prob = float(raw_pop) * 100 if raw_pop is not None else 0.0
+
+    return temp, rain_prob
+
+  except requests.exceptions.RequestException as e:
+    raise ConnectionError(f"Failed to connect to OpenWeatherMap API: {e}")
+
+
+def recommend(
+    category: str,
+    baseline_units: float,
+    temp: float,
+    rain_prob: float,
+    tier="standard_vendor",
+):
+  """Calculates the adjusted inventory recommendation range safely."""
+  rule = CATEGORY_RULES.get(category, CATEGORY_RULES["general_staples"])
+  config = ENTERPRISE_CONFIGS.get(tier, ENTERPRISE_CONFIGS["standard_vendor"])
+
+  adj = 0.0
+  if rule["temp_threshold"] is not None and temp > rule["temp_threshold"]:
+    adj += (temp - rule["temp_threshold"]) * rule["per_degree_pct"]
+
+  if rain_prob > 50:
+    adj += rule["rain_penalty_pct"]
+
+  # Safety buffer calculation
+  adjusted_baseline = baseline_units * (1 + (config["buffer_pct"] / 100))
+
+  spread = config["range_spread"]
+  low_calc = max(0, round(adjusted_baseline * (1 + (adj - spread) / 100)))
+  high_calc = max(0, round(adjusted_baseline * (1 + (adj + spread) / 100)))
+
+  return min(low_calc, high_calc), max(low_calc, high_calc)
+
+
+# -----------------------------------
+# Web & API Endpoints
+# -----------------------------------
 @app.route("/")
 def home():
-    html_content = """
+  html_content = """
     <!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
         <title>Weather-Based Inventory API</title>
         <style>
-            body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; background-color: #f4f4f9; color: #333; }
-            code { background: #e2e8f0; padding: 2px 6px; border-radius: 4px; }
-            .container { max-width: 600px; margin: auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+            body { font-family: system-ui, -apple-system, sans-serif; text-align: center; margin-top: 50px; background-color: #f8fafc; color: #1e293b; }
+            code { background: #e2e8f0; padding: 4px 8px; border-radius: 4px; font-family: monospace; }
+            .container { max-width: 650px; margin: auto; background: white; padding: 35px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+            h2 { color: #0f172a; margin-bottom: 8px; }
+            p { line-height: 1.6; }
         </style>
     </head>
     <body>
         <div class="container">
             <h2>Weather-Based Inventory API</h2>
-            <p>The application is running successfully.</p>
-            <p>Example Endpoint Usage:</p>
+            <p>The application engine is running successfully.</p>
+            <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+            <p><strong>Recommendation Endpoint:</strong></p>
             <p><code>/api/recommend?city=Ahmedabad&category=cold_beverages&baseline=50</code></p>
+            <p><strong>Trigger SMS Alert:</strong></p>
+            <p><code>/api/recommend?city=Ahmedabad&category=cold_beverages&baseline=50&send_sms=true&phone=+919876543210</code></p>
         </div>
     </body>
     </html>
     """
-    return render_template_string(html_content)
+  return render_template_string(html_content)
 
 
 @app.route("/api/recommend", methods=["GET"])
 def api_recommend():
+  try:
+    city = request.args.get("city", "Ahmedabad").strip()
+    category = request.args.get("category", "cold_beverages").strip()
+    tier = request.args.get("tier", "standard_vendor").strip()
+
+    should_send_sms = request.args.get("send_sms", "false").lower() in [
+        "true",
+        "1",
+        "yes",
+    ]
+    to_phone = request.args.get("phone", "").strip()
+
+    # Validations
+    if category not in CATEGORY_RULES:
+      return (
+          jsonify({
+              "error": (
+                  f"Invalid category '{category}'. Valid categories:"
+                  f" {list(CATEGORY_RULES.keys())}"
+              )
+          }),
+          400,
+      )
+
+    if tier not in ENTERPRISE_CONFIGS:
+      return (
+          jsonify({
+              "error": (
+                  f"Invalid tier '{tier}'. Valid tiers:"
+                  f" {list(ENTERPRISE_CONFIGS.keys())}"
+              )
+          }),
+          400,
+      )
+
     try:
-        city = request.args.get("city", "Ahmedabad").strip()
-        category = request.args.get("category", "cold_beverages").strip()
-        tier = request.args.get("tier", "standard_vendor").strip()
+      baseline_raw = request.args.get("baseline", 50)
+      baseline = float(baseline_raw)
+      if baseline < 0:
+        raise ValueError
+    except (ValueError, TypeError):
+      return (
+          jsonify(
+              {"error": "Baseline units must be a valid non-negative number."}
+          ),
+          400,
+      )
 
-        # Input Validations
-        if category not in CATEGORY_RULES:
-            return jsonify({"error": f"Invalid category '{category}'. Valid categories: {list(CATEGORY_RULES.keys())}"}), 400
+    # Processing logic
+    temp, rain_prob = get_forecast(city)
+    low, high = recommend(category, baseline, temp, rain_prob, tier=tier)
 
-        if tier not in ENTERPRISE_CONFIGS:
-            return jsonify({"error": f"Invalid tier '{tier}'. Valid tiers: {list(ENTERPRISE_CONFIGS.keys())}"}), 400
+    response_payload = {
+        "city": city,
+        "category": category,
+        "tier": tier,
+        "temp": temp,
+        "rain_prob": rain_prob,
+        "suggested_range": [low, high],
+        "sms_sent": False,
+    }
 
-        try:
-            baseline_raw = request.args.get("baseline", 50)
-            baseline = float(baseline_raw)
-            if baseline < 0:
-                raise ValueError
-        except (ValueError, TypeError):
-            return jsonify({"error": "Baseline units must be a valid non-negative number."}), 400
+    # Handle SMS trigger if explicitly requested
+    if should_send_sms:
+      if not to_phone:
+        return (
+            jsonify({
+                "error": (
+                    "A valid 'phone' parameter in E.164 format (e.g."
+                    " +919876543210) is required when send_sms=true."
+                )
+            }),
+            400,
+        )
 
-        temp, rain_prob = get_forecast(city)
-        low, high = recommend(category, baseline, temp, rain_prob, tier=tier)
+      sms_text = (
+          f"Inventory Alert for {city}: Suggested range for {category} is"
+          f" {low}-{high} units. (Temp: {temp}°C, Rain: {rain_prob}%)."
+      )
+      sms_result = send_alert(to_phone, sms_text)
 
-        return jsonify({
-            "city": city,
-            "category": category,
-            "tier": tier,
-            "temp": temp,
-            "rain_prob": rain_prob,
-            "suggested_range": [low, high],
-        }), 200
+      response_payload["sms_sent"] = bool(sms_result)
+      if sms_result:
+        response_payload["sms_sid"] = sms_result.sid
 
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-    except ConnectionError as e:
-        return jsonify({"error": str(e)}), 502
-    except RuntimeError as e:
-        return jsonify({"error": str(e)}), 500
-    except Exception as e:
-        return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
+    return jsonify(response_payload), 200
+
+  except ValueError as e:
+    return jsonify({"error": str(e)}), 400
+  except ConnectionError as e:
+    return jsonify({"error": str(e)}), 502
+  except RuntimeError as e:
+    return jsonify({"error": str(e)}), 500
+  except Exception as e:
+    logger.exception("Unexpected error in /api/recommend: %s", e)
+    return (
+        jsonify({"error": f"An unexpected server error occurred: {str(e)}"}),
+        500,
+    )
 
 
+@app.route("/api/send-alert", methods=["POST"])
+def manual_send_alert():
+  """Dedicated endpoint to dispatch custom alerts via POST payload."""
+  data = request.get_json(silent=True) or {}
+  to_number = data.get("phone")
+  message = data.get("message")
+
+  if not to_number or not message:
+    return (
+        jsonify(
+            {"error": "Both 'phone' and 'message' JSON fields are required."}
+        ),
+        400,
+    )
+
+  sms_instance = send_alert(to_number, message)
+  if sms_instance:
+    return jsonify({"status": "success", "sms_sid": sms_instance.sid}), 200
+  else:
+    return (
+        jsonify({
+            "error": "Failed to send SMS alert. Check server logs for details."
+        }),
+        500,
+    )
+
+
+# -----------------------------------
+# Server Execution (Render Dynamic Port Fix)
+# -----------------------------------
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=81, debug=False)
-from twilio.rest import Client 
-twilio_client = Client(os.environ['TWILIO_ACCOUNT_SID'], os.environ['TWILIO_AUTH_TOKEN'])
-
-def send_alert(to_number, message):  
-    twilio_client.messages.create(body=message, from_='TWILIO_PHONE_NUMBER', to=to_number)
+  port = int(os.environ.get("PORT", 10000))
+  app.run(host="0.0.0.0", port=port, debug=False)
