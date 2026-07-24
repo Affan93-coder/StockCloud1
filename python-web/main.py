@@ -1,6 +1,6 @@
 import logging
 import os
-from flask import Flask, jsonify, render_template_string, request
+from flask import Flask, jsonify, render_template, request
 import requests
 from twilio.base.exceptions import TwilioRestException
 from twilio.rest import Client
@@ -176,10 +176,10 @@ def recommend(
 
   adj = 0.0
   if rule["temp_threshold"] is not None and temp > rule["temp_threshold"]:
-    adj += (temp - rule["temp_threshold"]) * rule["per_degree_pct"]
+    adj += (temp - rule["temp_threshold"]) * rule["per_degree_pct"]  # ty:ignore[unsupported-operator]
 
   if rain_prob > 50:
-    adj += rule["rain_penalty_pct"]
+    adj += rule["rain_penalty_pct"]  # ty:ignore[unsupported-operator]
 
   # Safety buffer calculation
   adjusted_baseline = baseline_units * (1 + (config["buffer_pct"] / 100))
@@ -196,34 +196,7 @@ def recommend(
 # -----------------------------------
 @app.route("/")
 def home():
-  html_content = """
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <title>Weather-Based Inventory API</title>
-        <style>
-            body { font-family: system-ui, -apple-system, sans-serif; text-align: center; margin-top: 50px; background-color: #f8fafc; color: #1e293b; }
-            code { background: #e2e8f0; padding: 4px 8px; border-radius: 4px; font-family: monospace; }
-            .container { max-width: 650px; margin: auto; background: white; padding: 35px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-            h2 { color: #0f172a; margin-bottom: 8px; }
-            p { line-height: 1.6; }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h2>Weather-Based Inventory API</h2>
-            <p>The application engine is running successfully.</p>
-            <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;">
-            <p><strong>Recommendation Endpoint:</strong></p>
-            <p><code>/api/recommend?city=Ahmedabad&category=cold_beverages&baseline=50</code></p>
-            <p><strong>Trigger SMS Alert:</strong></p>
-            <p><code>/api/recommend?city=Ahmedabad&category=cold_beverages&baseline=50&send_sms=true&phone=+919876543210</code></p>
-        </div>
-    </body>
-    </html>
-    """
-  return render_template_string(html_content)
+    return render_template("index.html")
 
 
 @app.route("/api/recommend", methods=["GET"])
